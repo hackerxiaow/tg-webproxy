@@ -37,7 +37,43 @@ function hello(body) { if (body.byteLength !== 9 || body[0] !== 0x10 || body[1] 
 const protos = req => (req.headers.get('Sec-WebSocket-Protocol') ?? '').split(',').map(v => v.trim()).filter(Boolean);
 const mkCfg = ({ SECRET, BOOT }) => { const secret = String(SECRET || '').trim(), boot = String(BOOT || '').trim(); if (!secret) throw Error(); if (!boot) throw Error(); return { secret, key: getKey(secret), boot }; };
 async function mkCap(secret, host) { const key = macKey( getKey(secret, true), `bridge:${String(secret).trim().toLowerCase()}`, ); const sig = await sign( key, txt.encode(`tdesktop-web-proxy-bridge-v1\n${hostOf(host)}`), ); return b64(sig); }
-async function bridge(url, secret) { if (url.pathname !== '/' || url.search.length !== 51) return null; const cand = url.search.slice(8); if (url.search !== `?bridge=${cand}` || !/^[A-Za-z0-9_-]{43}$/.test(cand)) return null; const host = hostOf(url.hostname); const want = await mkCap(secret, host); if (cand.length !== want.length) return null; let diff = 0; for (let i = 0; i < want.length; i++) diff |= cand.charCodeAt(i) ^ want.charCodeAt(i); return diff === 0 ? host : null; }
+
+function getCandHosts(url, req) {
+  const hosts = new Set();
+  try { if (url?.hostname) hosts.add(hostOf(url.hostname)); } catch {}
+  if (req?.headers) {
+    for (const name of ['x-forwarded-host', 'eo-pages-host', 'x-original-host', 'host']) {
+      const v = req.headers.get(name);
+      if (v) {
+        for (const part of v.split(',')) {
+          try { hosts.add(hostOf(part.trim())); } catch {}
+        }
+      }
+    }
+  }
+  // 预置反代常见外部加速域名
+  for (const h of ['ws.w.wip.la', 'dl.cdcva.asso.eu.org']) {
+    try { hosts.add(hostOf(h)); } catch {}
+  }
+  return hosts;
+}
+async function bridge(url, secret, req) {
+  if (url.pathname !== '/' || url.search.length !== 51) return null;
+  const cand = url.search.slice(8);
+  if (url.search !== `?bridge=${cand}` || !/^[A-Za-z0-9_-]{43}$/.test(cand)) return null;
+  const hosts = getCandHosts(url, req);
+  for (const host of hosts) {
+    try {
+      const want = await mkCap(secret, host);
+      if (cand.length === want.length) {
+        let diff = 0;
+        for (let i = 0; i < want.length; i++) diff |= cand.charCodeAt(i) ^ want.charCodeAt(i);
+        if (diff === 0) return host;
+      }
+    } catch {}
+  }
+  return null;
+}
 const sha = async v => new Uint8Array(await CRYPTO.subtle.digest('SHA-256', u8(v)));
 function step(ctr, n) { let carry = n; for (let i = ctr.length - 1; i >= 0 && carry; i--) { const next = ctr[i] + (carry & 0xff); ctr[i] = next & 0xff; carry = Math.floor(carry / 256) + Math.floor(next / 256); } if (carry) throw Error(); }
 const mkCtr = (key, ctr) => { let iv = dup(ctr), tail = nil; const ready = CRYPTO.subtle.importKey('raw', u8(key), { name: 'AES-CTR' }, false, ['encrypt']);
@@ -115,10 +151,10 @@ if(!init&&aNonce&&android&&typeof android.postMessage==='function'){ const aPort
 const route = async (req, env) => {
   const url = new URL(req.url), { pathname: path, origin } = url, { method, headers } = req; let cfg;
   try { cfg = mkCfg(env); } catch { return ['/', '/health', '/api/v1/session', '/api/v1/ws'].includes(path) ? reply(null, 500) : reply(); }
-  if (path === '/' && (method === 'GET' || method === 'HEAD')) { let host = null; if (method === 'GET') { try { host = await bridge(url, cfg.secret); } catch {} } if (host) { const boot = await mkBoot(cfg.boot); const page = mkPage(host, boot); return new Response(page.body, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': page.csp, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Permissions-Policy': [ 'accelerometer=()', 'autoplay=()', 'camera=()', 'clipboard-read=()', 'clipboard-write=()', 'display-capture=()', 'encrypted-media=()', 'fullscreen=()', 'geolocation=()', 'gyroscope=()', 'hid=()', 'idle-detection=()', 'magnetometer=()', 'microphone=()', 'midi=()', 'payment=()', 'picture-in-picture=()', 'publickey-credentials-create=()', 'publickey-credentials-get=()', 'screen-wake-lock=()', 'serial=()', 'usb=()', 'web-share=()', 'xr-spatial-tracking=()', ].join(', '), }, }); } return new Response(method === 'HEAD' ? null : '<!doctype html><meta charset="utf-8"><title>Connection</title>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, }); }
+  if (path === '/' && (method === 'GET' || method === 'HEAD')) { let host = null; if (method === 'GET') { try { host = await bridge(url, cfg.secret, req); } catch {} } if (host) { const boot = await mkBoot(cfg.boot); const page = mkPage(host, boot); return new Response(page.body, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': page.csp, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'Permissions-Policy': [ 'accelerometer=()', 'autoplay=()', 'camera=()', 'clipboard-read=()', 'clipboard-write=()', 'display-capture=()', 'encrypted-media=()', 'fullscreen=()', 'geolocation=()', 'gyroscope=()', 'hid=()', 'idle-detection=()', 'magnetometer=()', 'microphone=()', 'midi=()', 'payment=()', 'picture-in-picture=()', 'publickey-credentials-create=()', 'publickey-credentials-get=()', 'screen-wake-lock=()', 'serial=()', 'usb=()', 'web-share=()', 'xr-spatial-tracking=()', ].join(', '), }, }); } return new Response(method === 'HEAD' ? null : '<!doctype html><meta charset="utf-8"><title>Connection</title>', { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, }); }
   if (path === '/health') { return new Response('{"ok":true}', { headers: { 'content-type': 'application/json; charset=utf-8' }, }); }
   if (path === '/api/v1/session') { const auth = bearer(headers.get('Authorization')); if (method === 'DELETE') { if (!auth || !(await verify(auth, cfg.boot, 'session'))) { return reply(); } let lease = leases.get(auth); if (!lease) leases.set(auth, lease = mkLease(auth)); lease.deleted = true; return reply(null, 204); } if (method !== 'POST' || !auth || !binary(req)) { return reply(); } if (!(await authBoot(auth, cfg.boot))) { return reply(); } try { const body = new Uint8Array(await req.arrayBuffer()); hello(body); const token = await mkSess(cfg.boot); return new Response(enc(0x11, 0), { status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Session-Token': token, 'X-Carrier-Mode': 'websocket-lanes', }, }); } catch { return reply(); } }
-  if (path !== '/api/v1/ws' || method !== 'GET' || headers.get('Upgrade')?.toLowerCase() !== 'websocket' || (headers.has('Origin') && headers.get('Origin') !== origin)) { return reply(); }
+  if (path !== '/api/v1/ws' || method !== 'GET' || headers.get('Upgrade')?.toLowerCase() !== 'websocket' || (headers.has('Origin') && headers.get('Origin') !== origin && ![...getCandHosts(url, req)].some(h => headers.get('Origin') === `https://${h}`))) { return reply(); }
   const offers = protos(req); const proto = offers.length === 1 ? offers[0] : null;
   const parts = proto?.split('.') ?? [], [kind, token = '', id] = parts, sid = Number(id);
   if (parts.length !== 3 || kind !== 'tproxy-lane-v1' || !/^[1-9][0-9]{0,7}$/.test(id) || sid > 0xffffff || !(await verify(token, cfg.boot, 'session'))) { return reply(); } const now = Date.now();
