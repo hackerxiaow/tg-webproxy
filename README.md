@@ -18,8 +18,7 @@ Telegram 客户端
 
 | 项 | 值 |
 |---|---|
-| **服务器 / 代理地址（主）** | `dl.cdcva.asso.eu.org` |
-| **备用入口** | `tg.moew.eu.org` |
+| **服务器 / 代理地址** | `dl.cdcva.asso.eu.org` |
 | **端口** | `443`（HTTPS / WSS） |
 | **密钥 SECRET** | `2de42a11ad839359ee77dd7cb2fbde8b` |
 | **Pages 直连（备用）** | `tg-webproxy-f5a.pages.dev` |
@@ -40,7 +39,7 @@ Telegram 客户端
 | 层 | 名称 | 域名 |
 |---|---|---|
 | Pages 主程序 | `tg-webproxy` | `tg-webproxy-f5a.pages.dev` |
-| Worker 转发 | `tg-webproxy-relay` | `dl.cdcva.asso.eu.org`（主）+ `tg.moew.eu.org`（备） |
+| Worker 转发 | `tg-webproxy-relay` | `dl.cdcva.asso.eu.org` |
 
 账号：`d9918cc215f68f240a776c36323702f6`（xiaow@mail.com）
 Token：`CLOUDFLARE_API_TOKEN_XIAOW`
