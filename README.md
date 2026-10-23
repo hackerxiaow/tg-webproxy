@@ -39,7 +39,7 @@ Telegram 客户端
 | 层 | 名称 | 域名 |
 |---|---|---|
 | Pages 主程序 | `tg-webproxy` | `tg-webproxy-f5a.pages.dev` |
-| Worker 转发 | `tg-webproxy-relay` | `dl.cdcva.asso.eu.org` |
+| Worker 转发 | `tgws` | `dl.cdcva.asso.eu.org` |
 
 账号：`d9918cc215f68f240a776c36323702f6`（xiaow@mail.com）
 Token：`CLOUDFLARE_API_TOKEN_XIAOW`
@@ -55,7 +55,7 @@ cd /Users/moe/.zcode/workspace/default/tg-webproxy
 npx wrangler pages deploy dist --project-name tg-webproxy --branch main
 
 # Worker relay
-npx wrangler deploy webproxy-relay.js --name tg-webproxy-relay
+npx wrangler deploy webproxy-relay.js --name tgws
 ```
 
 改 `SECRET` / `BOOT` 后需重设密钥并重新部署 Pages。
